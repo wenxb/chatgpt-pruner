@@ -1,0 +1,138 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <title>ChatGPT Pruner</title>
+    <style>
+      body {
+        margin: 0;
+        padding: 14px;
+        width: 320px;
+        font: 14px/1.45 system-ui, sans-serif;
+        background: #111827;
+        color: #f9fafb;
+      }
+
+      .title {
+        font-size: 16px;
+        font-weight: 700;
+        margin-bottom: 12px;
+      }
+
+      .card {
+        background: #1f2937;
+        border-radius: 12px;
+        padding: 12px;
+        margin-bottom: 12px;
+      }
+
+      .row {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 8px;
+        margin-bottom: 10px;
+      }
+
+      .row:last-child {
+        margin-bottom: 0;
+      }
+
+      input[type="number"] {
+        width: 88px;
+        border: 0;
+        border-radius: 8px;
+        padding: 8px 10px;
+        background: #374151;
+        color: #fff;
+      }
+
+      input[type="checkbox"] {
+        width: 16px;
+        height: 16px;
+      }
+
+      button {
+        border: 0;
+        border-radius: 10px;
+        padding: 8px 10px;
+        cursor: pointer;
+        background: #2563eb;
+        color: #fff;
+        font-size: 13px;
+      }
+
+      /* 立即裁剪按钮：绿色 */
+      button.green {
+        background: #16a34a;
+      }
+
+      /* 恢复按钮：灰色 */
+      button.secondary {
+        background: #4b5563;
+      }
+
+      button:disabled {
+        opacity: 0.45;
+        cursor: not-allowed;
+      }
+
+      .actions {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 8px;
+      }
+
+      .status {
+        font-size: 12px;
+        color: #d1d5db;
+        white-space: pre-line;
+      }
+
+      .hint {
+        font-size: 12px;
+        color: #9ca3af;
+        margin-top: 8px;
+      }
+    </style>
+  </head>
+  <body>
+    <div class="title">ChatGPT Pruner</div>
+
+    <div class="card">
+      <div class="row">
+        <span>保留数量</span>
+        <input id="keepTurns" type="number" min="1" step="1" />
+      </div>
+      <div class="row">
+        <button id="saveKeepTurns">保存</button>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="row">
+        <span>自动只保留最近对话</span>
+        <input id="autoTrimEnabled" type="checkbox" />
+      </div>
+      <div class="hint">
+        超过保留数量时，会自动移除更早的对话。
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="actions">
+        <button id="collapseNow" class="green">立即裁剪</button>
+        <button id="restoreNext" class="secondary">恢复一段</button>
+      </div>
+      <div class="hint">
+        恢复一段 = 每次恢复当前 [保留数量] 个对话块。
+      </div>
+    </div>
+
+    <div class="card">
+      <div id="status" class="status">正在读取状态…</div>
+    </div>
+
+    <script src="popup.js"></script>
+  </body>
+</html>

@@ -51,7 +51,14 @@
     lastConversationKey: "",
 
     // 是否已安装前端路由监听
-    routeWatcherInstalled: false
+    routeWatcherInstalled: false,
+
+    // 恢复一段后，暂缓自动裁剪
+    // 直到新的真实消息出现，才恢复自动裁剪
+    autoTrimSuspendedAfterRestore: false,
+
+    // 记录最近一次已知的对话块数量
+    lastKnownLiveCount: 0
   };
 
   // =========================
@@ -228,6 +235,9 @@
       return;
     }
 
+    // 新会话开始时，刷新当前已知数量
+    state.lastKnownLiveCount = nodes.length;
+
     // 新会话准备好后，按当前设置重新进入自动裁剪流程
     if (state.autoTrimEnabled) {
       scheduleAutoCleanup();
@@ -241,6 +251,9 @@
 
     // 清掉旧会话缓存，避免跨会话污染
     clearConversationCache();
+
+    // 新会话开始后，不保留旧会话里的“恢复后暂缓”状态
+    state.autoTrimSuspendedAfterRestore = false;
 
     // 更新当前会话 key
     state.lastConversationKey = getConversationKey();
@@ -310,10 +323,14 @@
     const liveCount = findTurnElements().length;
     const cachedCount = state.cachedNodes.length;
 
+    // 同步当前已知数量
+    state.lastKnownLiveCount = liveCount;
+
     return {
       success: true,
       keepTurns: state.keepTurns,
       autoTrimEnabled: state.autoTrimEnabled,
+      autoTrimSuspendedAfterRestore: state.autoTrimSuspendedAfterRestore,
       liveCount,
       cachedCount,
       canCollapse: liveCount > state.keepTurns,
@@ -349,6 +366,7 @@
 
     const excess = nodes.length - state.keepTurns;
     if (excess <= 0) {
+      state.lastKnownLiveCount = nodes.length;
       return {
         ...getState(),
         message: "当前无需裁剪。"
@@ -369,6 +387,8 @@
         node.remove();
       }
     });
+
+    state.lastKnownLiveCount = findTurnElements().length;
 
     return {
       ...getState(),
@@ -433,6 +453,10 @@
 
     restoreScrollPosition(anchorEl, anchorTop);
 
+    // 恢复后先暂缓自动裁剪，避免刚恢复又被立刻裁掉
+    state.autoTrimSuspendedAfterRestore = true;
+    state.lastKnownLiveCount = findTurnElements().length;
+
     return {
       ...getState(),
       message: `已恢复 ${chunk.length} 个对话块。`
@@ -451,7 +475,7 @@
     state.cleanupTimer = setTimeout(() => {
       state.cleanupTimer = null;
 
-      if (state.autoTrimEnabled) {
+      if (state.autoTrimEnabled && !state.autoTrimSuspendedAfterRestore) {
         collapseOldTurns(false);
       }
     }, DEBOUNCE_MS);
@@ -467,27 +491,52 @@
 
       ensureConversationState();
 
-      let needsCleanup = false;
+      let hasRelevantChange = false;
+      let hasAddedConversationNode = false;
 
       for (const mutation of mutations) {
         for (const node of mutation.addedNodes) {
           if (isRelevantConversationNode(node)) {
-            needsCleanup = true;
+            hasRelevantChange = true;
+            hasAddedConversationNode = true;
             break;
           }
         }
-        if (needsCleanup) break;
+        if (hasAddedConversationNode) break;
 
         for (const node of mutation.removedNodes) {
           if (isRelevantConversationNode(node)) {
-            needsCleanup = true;
+            hasRelevantChange = true;
             break;
           }
         }
-        if (needsCleanup) break;
+        if (hasRelevantChange) break;
       }
 
-      if (needsCleanup) {
+      if (!hasRelevantChange) return;
+
+      const liveCount = findTurnElements().length;
+      const liveCountIncreased = liveCount > state.lastKnownLiveCount;
+
+      // 如果当前处于“恢复后暂缓自动裁剪”状态：
+      // 只有当新的真实对话块增加时，才解除暂缓并恢复自动裁剪
+      if (state.autoTrimSuspendedAfterRestore) {
+        if (hasAddedConversationNode && liveCountIncreased) {
+          state.autoTrimSuspendedAfterRestore = false;
+          state.lastKnownLiveCount = liveCount;
+
+          if (state.autoTrimEnabled) {
+            scheduleAutoCleanup();
+          }
+        } else {
+          state.lastKnownLiveCount = liveCount;
+        }
+        return;
+      }
+
+      state.lastKnownLiveCount = liveCount;
+
+      if (state.autoTrimEnabled) {
         scheduleAutoCleanup();
       }
     });
@@ -527,6 +576,21 @@
       [STORAGE_KEYS.KEEP_TURNS]: next
     });
 
+    // 保存后立即按新配置生效：
+    // 如果当前页面对话块超出了新的 keepTurns，就立刻裁剪。
+    // 这里用 force=true，因为这是用户主动保存，不受自动裁剪开关影响。
+    const liveCount = findTurnElements().length;
+
+    if (liveCount > state.keepTurns) {
+      const result = collapseOldTurns(true);
+      return {
+        ...result,
+        message: `保留数量已设置为 ${next}。`
+      };
+    }
+
+    state.lastKnownLiveCount = liveCount;
+
     return {
       ...getState(),
       message: `保留数量已设置为 ${next}。`
@@ -540,7 +604,7 @@
       [STORAGE_KEYS.AUTO_TRIM]: state.autoTrimEnabled
     });
 
-    if (state.autoTrimEnabled) {
+    if (state.autoTrimEnabled && !state.autoTrimSuspendedAfterRestore) {
       scheduleAutoCleanup();
     }
 
@@ -628,6 +692,7 @@
 
     state.started = true;
     state.lastConversationKey = getConversationKey();
+    state.lastKnownLiveCount = findTurnElements().length;
 
     await initConfig();
 
